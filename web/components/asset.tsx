@@ -1,15 +1,15 @@
-import { useWallet } from '@solana/wallet-adapter-react';
-import dynamic from 'next/dynamic';
-import Head from 'next/head';
-import React, { useEffect, useState } from 'react';
+import { useWallet } from '@solana/wallet-adapter-react'
+import dynamic from 'next/dynamic'
+import Head from 'next/head'
+import React, { useEffect, useState } from 'react'
 import MarkdownProcessor, {
   type MarkdownFrontMatter,
-  processMarkdown,
-} from './processed-markdown';
-const VerifyWizard = dynamic(() => import('./verify-wizard'), { ssr: false });
+  processMarkdown
+} from './processed-markdown'
+const VerifyWizard = dynamic(() => import('./verify-wizard'), { ssr: false })
 
-import { isVerifiedAsset } from '@/utilities/is-verified-asset';
-import type { DasApiAsset } from '@metaplex-foundation/digital-asset-standard-api';
+import { isVerifiedAsset } from '@/utilities/is-verified-asset'
+import type { DasApiAsset } from '@metaplex-foundation/digital-asset-standard-api'
 
 // Order of operations
 // NFT
@@ -22,12 +22,12 @@ import type { DasApiAsset } from '@metaplex-foundation/digital-asset-standard-ap
 // - Description (Content)
 
 type LinksOverride = {
-  [key: string]: string | undefined;
-};
+  [key: string]: string | undefined
+}
 
 type AssetProps = {
-  asset: DasApiAsset;
-};
+  asset: DasApiAsset
+}
 
 const Stats = ({ author, mint }: { author: string; mint: string }) => (
   <div className="flex flex-col sm:flex-row gap-2">
@@ -91,49 +91,71 @@ const Stats = ({ author, mint }: { author: string; mint: string }) => (
       </div>
     </div>
   </div>
-);
+)
 
 function Asset({ asset }: AssetProps) {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const { publicKey } = useWallet();
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const { publicKey } = useWallet()
   const [frontMatter, setFrontMatter] = useState<MarkdownFrontMatter | null>(
     null
-  );
-  const [content, setContent] = useState('');
+  )
+  const [content, setContent] = useState('')
 
   const {
     id: address,
     ownership: { owner: author },
     content: {
-      metadata: { name: assetName, description: unprocessedMarkdown = '' },
-    },
-  } = asset;
-  const isVerified = isVerifiedAsset(asset);
+      metadata: { name: assetName, description: unprocessedMarkdown = '' }
+    }
+  } = asset
+  const isVerified = isVerifiedAsset(asset)
 
   useEffect(() => {
     const processMarkdownAsync = async () => {
       const { frontMatter, content } = await processMarkdown(
         unprocessedMarkdown
-      );
-      setFrontMatter(frontMatter);
-      setContent(content);
-    };
+      )
+      setFrontMatter(frontMatter)
+      setContent(content)
+    }
 
-    processMarkdownAsync();
-  }, [unprocessedMarkdown]);
+    processMarkdownAsync()
+  }, [unprocessedMarkdown])
 
-  const title = frontMatter?.title ?? assetName ?? 'Untitled Piece';
+  const title = frontMatter?.title ?? assetName ?? 'Untitled Piece'
   const description =
-    frontMatter?.description ?? (isVerified ? content : content.slice(0, 140));
+    frontMatter?.description ?? (isVerified ? content : content.slice(0, 140))
 
-  const image = (asset.content.links as unknown as LinksOverride)?.image;
+  // Clientside, call the json_uri and check if the description has changed
+  // if it has changed we will call revalidate
+  useEffect(() => {
+    if (asset.content.json_uri) {
+      const fetchContent = async () => {
+        const res = await fetch(asset.content.json_uri)
+        const {
+          description: tempDescription
+        }: Pick<
+          Partial<DasApiAsset['content']['metadata']>,
+          'name' | 'description' | 'image'
+        > = await res.json()
+
+        // check if tempDescription is different than the current description
+        if (tempDescription !== description) {
+          await fetch('/api/revalidate?slug=' + asset.id)
+        }
+      }
+      fetchContent()
+    }
+  }, [asset.content, asset.content.json_uri, asset.id, description])
+
+  const image = (asset.content.links as unknown as LinksOverride)?.image
   const imageWithTimestamp = image?.includes('?')
     ? `${image}&ts=${Date.now()}`
-    : `${image}?ts=${Date.now()}`;
+    : `${image}?ts=${Date.now()}`
 
   const handleVerifyClick = () => {
-    setIsModalOpen(true);
-  };
+    setIsModalOpen(true)
+  }
 
   return (
     <>
@@ -231,7 +253,7 @@ function Asset({ asset }: AssetProps) {
         </div>
       </div>
     </>
-  );
+  )
 }
 
-export default Asset;
+export default Asset
